@@ -11,13 +11,12 @@ from jwt import DecodeError
 from sanic.log import logger
 from sanic.request import Request
 from sanic.response import HTTPResponse, file
-from tortoise import fields, Model
+from tortoise import fields
 from tortoise.exceptions import DoesNotExist
 
 from sanic_security.configuration import config as security_config
 from sanic_security.exceptions import *
 from sanic_security.utils import get_ip, dir_exists
-
 
 """
 An effective, simple, and async security library for the Sanic framework.
@@ -38,21 +37,18 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 """
 
 
-class BaseModel(Model):
+class BaseModel:
     """
     Base Sanic Security model that all other models derive from.
 
     Attributes:
-        id (int): Primary key of model.
         date_created (datetime): Time this model was created in the database.
-        date_updated (datetime): Time this model was updated in the database.
-        deleted (bool): Renders the model filterable without removing from the database.
+        deleted (bool): Renders the model filterable without being removed.
     """
 
-    id = fields.IntField(pk=True)
-    date_created = fields.DatetimeField(auto_now_add=True)
-    date_updated = fields.DatetimeField(auto_now=True)
-    deleted = fields.BooleanField(default=False)
+    def __init__(self):
+        self.date_created = datetime.datetime.utcnow()
+        self.deleted = False
 
     def validate(self) -> None:
         """
@@ -99,24 +95,31 @@ class Account(BaseModel):
         password (str): Password of account for protection. Must be hashed via Argon.
         disabled (bool): Renders the account unusable but available.
         verified (bool): Renders the account unusable until verified via two-step verification or other method.
-        roles (ManyToManyRelation[Role]): Roles associated with this account.
+        roles (list): Roles associated with this account.
     """
 
-    username = fields.CharField(max_length=32)
-    email = fields.CharField(unique=True, max_length=255)
-    phone = fields.CharField(unique=True, max_length=14, null=True)
-    password = fields.CharField(max_length=255)
-    disabled = fields.BooleanField(default=False)
-    verified = fields.BooleanField(default=False)
-    roles: fields.ManyToManyRelation["Role"] = fields.ManyToManyField(
-        "models.Role", through="account_role"
-    )
+    def __init__(
+        self,
+        username: str,
+        email: str,
+        password: str,
+        roles: list,
+        phone: str = None,
+        disabled: bool = False,
+        verified: bool = True,
+    ):
+        super().__init__()
+        self.username = username
+        self.email = email
+        self.password = password
+        self.roles = roles
+        self.phone = phone
+        self.disabled = disabled
+        self.verified = verified
 
     def json(self) -> dict:
         return {
-            "id": self.id,
             "date_created": str(self.date_created),
-            "date_updated": str(self.date_updated),
             "email": self.email,
             "username": self.username,
             "disabled": self.disabled,
@@ -138,66 +141,6 @@ class Account(BaseModel):
             raise UnverifiedError()
         elif self.disabled:
             raise DisabledError()
-
-    @staticmethod
-    async def get_via_email(email: str):
-        """
-        Retrieve an account with an email.
-
-        Args:
-            email (str): Email associated to account being retrieved.
-
-        Returns:
-            account
-
-        Raises:
-            NotFoundError
-        """
-        try:
-            account = await Account.filter(email=email, deleted=False).get()
-            return account
-        except DoesNotExist:
-            raise NotFoundError("Account with this email does not exist.")
-
-    @staticmethod
-    async def get_via_username(username: str):
-        """
-        Retrieve an account with a username.
-
-        Args:
-            username (str): Username associated to account being retrieved.
-
-        Returns:
-            account
-
-        Raises:
-            NotFoundError
-        """
-        try:
-            account = await Account.filter(username=username, deleted=False).get()
-            return account
-        except DoesNotExist:
-            raise NotFoundError("Account with this username does not exist.")
-
-    @staticmethod
-    async def get_via_phone(phone: str):
-        """
-        Retrieve an account with a phone number.
-
-        Args:
-            phone (str): Phone number associated to account being retrieved.
-
-        Returns:
-            account
-
-        Raises:
-            NotFoundError
-        """
-        try:
-            account = await Account.filter(phone=phone, deleted=False).get()
-            return account
-        except DoesNotExist:
-            raise NotFoundError("Account with this phone number does not exist.")
 
 
 class Session(BaseModel):
